@@ -11,7 +11,7 @@ terraform {
     bucket         = "learnit-project-terraform-state-bucket"
     key            = "state/terraform.tfstate"
     region         = "eu-central-1"
-    dynamodb_table = "terraform-lock"
+    use_lockfile   = true
   }
 }
 
