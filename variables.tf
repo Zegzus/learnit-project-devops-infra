@@ -8,6 +8,11 @@ variable "instance_type" {
   default = "t3.micro"
 }
 
+variable "jenkins_instance_type" {
+  type        = string
+  default     = "t3.small"
+}
+
 variable "ami_id" {
   type        = string
   description = "Ubuntu 24.04 LTS AMI ID"
@@ -16,6 +21,12 @@ variable "ami_id" {
 
 variable "key_name" {
   type        = string
-  description = "Name of the AWS SSH key pair"
-  default     = "key-name-in-aws"
+  description = "Name assigned to the generated AWS key pair"
+  default     = "learnit-ssh-key"
+}
+
+variable "ssh_allowed_cidr" {
+  type        = string
+  description = "CIDR allowed to SSH into the instances. Restrict this to your own IP (e.g. \"1.2.3.4/32\") instead of leaving it open to the world."
+  default     = "0.0.0.0/0"
 }

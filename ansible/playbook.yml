@@ -61,3 +61,100 @@
     - name: Enable UFW firewall
       ufw:
         state: enabled
+
+- name: Configure Jenkins server
+  hosts: jenkins_servers
+  become: yes
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install prerequisites
+      apt:
+        name:
+          - fontconfig
+          - openjdk-17-jre
+          - ca-certificates
+          - curl
+          - gnupg
+        state: present
+
+    - name: Add Jenkins GPG key
+      get_url:
+        url: https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+        dest: /usr/share/keyrings/jenkins-keyring.asc
+        mode: '0644'
+
+    - name: Add Jenkins apt repository
+      apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/"
+        state: present
+        filename: jenkins
+
+    - name: Install Jenkins
+      apt:
+        name: jenkins
+        state: present
+        update_cache: yes
+
+    - name: Ensure Jenkins service is started and enabled at boot
+      service:
+        name: jenkins
+        state: started
+        enabled: yes
+
+    - name: Install Docker prerequisites (Jenkins builds/pushes images)
+      apt:
+        name:
+          - apt-transport-https
+          - lsb-release
+        state: present
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker CE on the Jenkins host
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: present
+        update_cache: yes
+
+    - name: Add jenkins user to the docker group (so pipeline can build/push images)
+      user:
+        name: jenkins
+        groups: docker
+        append: yes
+
+    - name: Allow SSH (22) and Jenkins UI (8080) in UFW
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - '22'
+        - '8080'
+
+    - name: Enable UFW firewall
+      ufw:
+        state: enabled
+
+    - name: Read initial Jenkins admin password
+      command: cat /var/lib/jenkins/secrets/initialAdminPassword
+      register: jenkins_initial_password
+      changed_when: false
+
+    - name: Show initial Jenkins admin password
+      debug:
+        msg: "Initial Jenkins admin password: {{ jenkins_initial_password.stdout }}"

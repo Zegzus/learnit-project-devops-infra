@@ -1,3 +1,5 @@
 **/.terraform/*
 *.tfstate
 *.tfstate.*
+ansible/inventory.ini
+*.retry
