@@ -49,3 +49,15 @@
         name: ubuntu
         groups: docker
         append: yes
+    - name: Allow SSH (22) and App (8080) in UFW
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - '22'
+        - '8080'
+
+    - name: Enable UFW firewall
+      ufw:
+        state: enabled
