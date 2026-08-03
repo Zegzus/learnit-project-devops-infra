@@ -13,6 +13,12 @@ variable "jenkins_instance_type" {
   default     = "t3.small"
 }
 
+variable "agent_instance_type" {
+  type        = string
+  description = "Instance type for the dedicated Jenkins build agent"
+  default     = "t3.small"
+}
+
 variable "ami_id" {
   type        = string
   description = "Ubuntu 24.04 LTS AMI ID"

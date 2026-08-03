@@ -1,0 +1,32 @@
+# Copy this file to group_vars/all/vault.yml and fill in real values, then
+# encrypt it before ever committing:
+#
+#   cp group_vars/all/vault.yml.example group_vars/all/vault.yml
+#   nano group_vars/all/vault.yml           # fill in real secrets
+#   ansible-vault encrypt group_vars/all/vault.yml
+#
+# Run the playbook with:
+#   ansible-playbook -i inventory.ini playbook.yml --ask-vault-pass
+#
+# group_vars/all/vault.yml is already covered by .gitignore — do not remove
+# it from there, and never commit the decrypted file.
+
+jenkins_admin_user: "admin"
+jenkins_admin_password: "CHANGE_ME_STRONG_PASSWORD"
+
+dockerhub_user: "your-dockerhub-username"
+dockerhub_pass: "your-dockerhub-access-token"   # use a Docker Hub access token, not your account password
+
+discord_webhook_url: "https://discord.com/api/webhooks/xxxxx/yyyyy"
+
+# Path (on the Ansible control machine) to the private key matching
+# aws_key_pair.deployer / var.key_name in Terraform. This same key is used
+# for: SSH access to all EC2 instances, the Jenkins controller -> agent SSH
+# launcher, and the aws-ec2-ssh-key credential used in the Jenkinsfile deploy
+# stage.
+ssh_private_key_path: "~/.ssh/id_rsa"
+
+# The application repository Jenkins should auto-create a multibranch
+# pipeline job for.
+app_repo_owner: "Zegzus"
+app_repo_name: "learnit-project-devops-app"

@@ -1,0 +1,14 @@
+configuration-as-code
+git
+github
+github-branch-source
+job-dsl
+workflow-aggregator
+ssh-slaves
+ssh-agent
+credentials-binding
+plain-credentials
+matrix-auth
+ansicolor
+docker-workflow
+cloudbees-folder

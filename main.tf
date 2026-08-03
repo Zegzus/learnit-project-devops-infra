@@ -28,3 +28,16 @@ resource "aws_instance" "jenkins_server" {
     Name = "LearnIT-Jenkins-Server"
   }
 }
+
+resource "aws_instance" "jenkins_agent" {
+  ami           = var.ami_id
+  instance_type = var.agent_instance_type
+  subnet_id     = aws_subnet.public.id
+  vpc_security_group_ids = [aws_security_group.agent_sg.id]
+
+  key_name = aws_key_pair.deployer.key_name
+
+  tags = {
+    Name = "LearnIT-Jenkins-Agent"
+  }
+}

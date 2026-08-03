@@ -79,3 +79,36 @@ resource "aws_security_group" "jenkins_sg" {
     Name = "devops-jenkins-security-group"
   }
 }
+
+resource "aws_security_group" "agent_sg" {
+  name        = "devops-jenkins-agent-sg"
+  description = "Allow SSH only from the Jenkins controller (and the admin CIDR for debugging)"
+  vpc_id      = aws_vpc.main.id
+
+  # The Jenkins controller connects to the agent over SSH to launch it.
+  ingress {
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.jenkins_sg.id]
+  }
+
+  # So you can still SSH in yourself to debug the agent.
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.ssh_allowed_cidr]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "devops-jenkins-agent-security-group"
+  }
+}

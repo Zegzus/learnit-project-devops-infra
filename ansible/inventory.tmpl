@@ -3,3 +3,6 @@ ${public_ip} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa
 
 [jenkins_servers]
 ${public_ip_jenkins} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa
+
+[jenkins_agents]
+${public_ip_agent} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa

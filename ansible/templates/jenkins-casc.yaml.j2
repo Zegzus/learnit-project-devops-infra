@@ -1,0 +1,102 @@
+jenkins:
+  systemMessage: "learnit-project-devops-infra — managed by Jenkins Configuration as Code. Manual changes in the UI will be overwritten on the next Ansible run."
+  numExecutors: 0
+  mode: EXCLUSIVE
+
+  nodes:
+    - permanent:
+        name: "docker-agent-1"
+        remoteFS: "/home/ubuntu/agent"
+        numExecutors: 2
+        labelString: "docker-agent linux"
+        mode: NORMAL
+        launcher:
+          ssh:
+            host: "{{ groups['jenkins_agents'][0] }}"
+            port: 22
+            credentialsId: "aws-ec2-ssh-key"
+            sshHostKeyVerificationStrategy:
+              nonVerifyingKeyVerificationStrategy: {}
+        retentionStrategy:
+          always: {}
+          
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "{{ jenkins_admin_user }}"
+          password: "{{ jenkins_admin_password }}"
+
+  authorizationStrategy:
+    globalMatrix:
+      permissions:
+        - "Overall/Administer:{{ jenkins_admin_user }}"
+        - "Overall/Read:anonymous"
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - usernamePassword:
+              scope: GLOBAL
+              id: "docker-hub-credentials"
+              username: "{{ dockerhub_user }}"
+              password: "{{ dockerhub_pass }}"
+              description: "Docker Hub push credentials"
+          - usernamePassword:
+              scope: GLOBAL
+              id: "github-token"
+              username: "{{ github_username }}"
+              password: "{{ github_token }}"
+          - basicSSHUserPrivateKey:
+              scope: GLOBAL
+              id: "aws-ec2-ssh-key"
+              username: "ubuntu"
+              privateKeySource:
+                directEntry:
+                  privateKey: |
+{{ lookup('file', ssh_private_key_path) | indent(20, first=True) }}
+              description: "SSH key used to reach the build agent and the app server (same key pair as Terraform's aws_key_pair.deployer)"
+          - string:
+              scope: GLOBAL
+              id: "discord-webhook-url"
+              secret: "{{ discord_webhook_url }}"
+              description: "Discord webhook for build/deploy notifications"
+
+unclassified:
+  location:
+    url: "http://{{ groups['jenkins_servers'][0] }}:8080/"
+
+jenkins:
+  globalNodeProperties:
+    - envVars:
+        env:
+          - key: APP_SERVER_IP
+            value: "{{ app_server_ip }}"
+
+# Auto-creates the multibranch pipeline job so a fresh Jenkins is immediately
+# ready to build on push, with zero manual clicking. Requires the job-dsl and
+# github-branch-source plugins (already in plugins.txt).
+# Adjust repoOwner/repository to your actual application repo fork.
+jobs:
+  - script: >
+      multibranchPipelineJob('learnit-app') {
+        branchSources {
+          github {
+            id('learnit-app-source')
+            repoOwner('{{ app_repo_owner }}')
+            repository('{{ app_repo_name }}')
+            scanCredentialsId('github-token')
+          }
+        }
+        orphanedItemStrategy {
+          discardOldItems {
+            numToKeep(10)
+          }
+        }
+        triggers {
+          periodicFolderTrigger {
+            interval('5m')
+          }
+        }
+      }
