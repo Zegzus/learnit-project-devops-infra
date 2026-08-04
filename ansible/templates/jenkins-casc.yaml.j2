@@ -19,6 +19,12 @@ jenkins:
               nonVerifyingKeyVerificationStrategy: {}
         retentionStrategy:
           always: {}
+
+  globalNodeProperties:
+    - envVars:
+        env:
+          - key: APP_SERVER_IP
+            value: "{{ groups['webservers'][0] }}"
           
   securityRealm:
     local:
@@ -66,13 +72,6 @@ credentials:
 unclassified:
   location:
     url: "http://{{ groups['jenkins_servers'][0] }}:8080/"
-
-jenkins:
-  globalNodeProperties:
-    - envVars:
-        env:
-          - key: APP_SERVER_IP
-            value: "{{ app_server_ip }}"
 
 # Auto-creates the multibranch pipeline job so a fresh Jenkins is immediately
 # ready to build on push, with zero manual clicking. Requires the job-dsl and

@@ -49,6 +49,23 @@
         name: ubuntu
         groups: docker
         append: yes
+
+    - name: Create the app directory
+      file:
+        path: /opt/learnit-app
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Deploy docker-compose configuration
+      template:
+        src: templates/docker-compose.yml.j2
+        dest: /opt/learnit-app/docker-compose.yml
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+
     - name: Allow SSH (22) and App (8080) in UFW
       ufw:
         rule: allow
@@ -61,209 +78,7 @@
     - name: Enable UFW firewall
       ufw:
         state: enabled
-
-- name: Configure Jenkins server
-  hosts: jenkins_servers
-  become: yes
-  vars:
-    app_server_ip: "{{ groups['webservers'][0] }}"
-  tasks:
-    - name: Update apt cache
-      apt:
-        update_cache: yes
-        cache_valid_time: 3600
-
-    - name: Install prerequisites
-      apt:
-        name:
-          - fontconfig
-          - openjdk-21-jre
-          - ca-certificates
-          - curl
-          - gnupg
-        state: present
-
-    - name: Ensure apt keyrings directory exists
-      file:
-        path: /etc/apt/keyrings
-        state: directory
-        mode: "0755"
-
-    - name: Download Jenkins repository key
-      get_url:
-        url: https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key
-        dest: /etc/apt/keyrings/jenkins-keyring.asc
-        mode: "0644"
-
-    - name: Add Jenkins repository
-      apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/"
-        filename: jenkins
-        state: present
-
-    - name: Update apt cache
-      apt:
-        update_cache: yes
-
-    - name: Wait for apt lock
-      shell: |
-        while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
-          sleep 5
-        done
-      changed_when: false
-
-    - name: Mask Jenkins service before installation
-      systemd:
-        name: jenkins
-        masked: yes
-
-    - name: Install Jenkins without starting service
-      apt:
-        name: jenkins
-        state: present
-      environment:
-        JAVA_OPTS: "-Djenkins.install.runSetupWizard=false"
-
-    - name: Install Docker prerequisites (Jenkins builds/pushes images)
-      apt:
-        name:
-          - apt-transport-https
-          - lsb-release
-        state: present
-
-    - name: Add Docker GPG key
-      apt_key:
-        url: https://download.docker.com/linux/ubuntu/gpg
-        state: present
-
-    - name: Add Docker repository
-      apt_repository:
-        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
-        state: present
-
-    - name: Install Docker CE on the Jenkins host
-      apt:
-        name:
-          - docker-ce
-          - docker-ce-cli
-          - containerd.io
-        state: present
-        update_cache: yes
-
-    - name: Add jenkins user to the docker group (so pipeline can build/push images)
-      user:
-        name: jenkins
-        groups: docker
-        append: yes
-
-    - name: Allow SSH (22) and Jenkins UI (8080) in UFW
-      ufw:
-        rule: allow
-        port: "{{ item }}"
-        proto: tcp
-      loop:
-        - '22'
-        - '8080'
-
-    - name: Enable UFW firewall
-      ufw:
-        state: enabled
-
-    # --- Configuration as Code (JCasC) ---
-
-    - name: Download Jenkins Plugin Manager CLI
-      get_url:
-        url: "https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.13.2/jenkins-plugin-manager-2.13.2.jar"
-        dest: /opt/jenkins-plugin-manager.jar
-        mode: '0644'
-
-    - name: Copy plugins list
-      copy:
-        src: files/plugins.txt
-        dest: /var/lib/jenkins/plugins.txt
-        owner: jenkins
-        group: jenkins
-        mode: '0644'
-
-    - name: Install Jenkins plugins via Plugin Manager CLI
-      become: yes
-      command: >
-        sudo -u jenkins java -jar /opt/jenkins-plugin-manager.jar
-        --war /usr/share/jenkins/jenkins.war
-        --plugin-file /var/lib/jenkins/plugins.txt
-        --plugin-download-directory /var/lib/jenkins/plugins
-      register: plugin_install
-      changed_when: true
-
-    - name: Fix Jenkins plugin permissions
-      file:
-        path: /var/lib/jenkins/plugins
-        owner: jenkins
-        group: jenkins
-        recurse: yes
-
-    - name: Create JCasC config directory
-      file:
-        path: /var/lib/jenkins/casc_configs
-        state: directory
-        owner: jenkins
-        group: jenkins
-        mode: '0750'
-
-    - name: Deploy JCasC configuration (jenkins.yaml)
-      template:
-        src: jenkins-casc.yaml.j2
-        dest: /var/lib/jenkins/casc_configs/jenkins.yaml
-        owner: jenkins
-        group: jenkins
-        mode: '0640'
-      register: casc_config
-
-    - name: Ensure systemd override directory exists
-      file:
-        path: /etc/systemd/system/jenkins.service.d
-        state: directory
-        mode: '0755'
-
-    - name: Point Jenkins at the JCasC config via systemd override
-      copy:
-        dest: /etc/systemd/system/jenkins.service.d/casc.conf
-        content: |
-          [Service]
-          Environment="CASC_JENKINS_CONFIG=/var/lib/jenkins/casc_configs/jenkins.yaml"
-        mode: '0644'
-      register: casc_env
-
-    - name: Reload systemd
-      systemd:
-        daemon_reload: yes
-      when: casc_env.changed
-    - name: Unmask Jenkins service
-      systemd:
-        name: jenkins
-        masked: no
-
-    - name: Ensure Jenkins service is started and enabled at boot
-      service:
-        name: jenkins
-        state: started
-        enabled: yes
-
-    - name: Restart Jenkins to install plugins and apply JCasC
-      service:
-        name: jenkins
-        state: restarted
-      when: plugin_install.changed or casc_config.changed or casc_env.changed
-
-    - name: Wait for Jenkins to come back up
-      uri:
-        url: "http://localhost:8080/login"
-        status_code: [200, 403]
-      register: jenkins_up
-      until: jenkins_up.status is defined
-      retries: 30
-      delay: 10
-
+        
 - name: Configure the dedicated Jenkins build agent
   hosts: jenkins_agents
   become: yes
@@ -331,3 +146,183 @@
     - name: Enable UFW firewall
       ufw:
         state: enabled
+
+- name: Configure Jenkins server
+  hosts: jenkins_servers
+  become: yes
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install prerequisites
+      apt:
+        name:
+          - fontconfig
+          - openjdk-21-jre
+          - ca-certificates
+          - curl
+          - gnupg
+          - acl
+        state: present
+
+    - name: Download Jenkins GPG key
+      get_url:
+        url: https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key
+        dest: /usr/share/keyrings/jenkins-keyring.asc
+        mode: '0644'
+        force: yes
+
+    - name: Add Jenkins apt repository
+      apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/"
+        filename: jenkins
+        state: present
+
+    - name: Install Jenkins
+      apt:
+        name: jenkins
+        state: present
+        update_cache: yes
+
+    - name: Ensure Jenkins service is started and enabled at boot
+      service:
+        name: jenkins
+        state: started
+        enabled: yes
+
+    - name: Install Docker prerequisites (Jenkins builds/pushes images)
+      apt:
+        name:
+          - apt-transport-https
+          - lsb-release
+        state: present
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker CE on the Jenkins host
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: present
+        update_cache: yes
+
+    - name: Add jenkins user to the docker group (so pipeline can build/push images)
+      user:
+        name: jenkins
+        groups: docker
+        append: yes
+
+    - name: Allow SSH (22) and Jenkins UI (8080) in UFW
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - '22'
+        - '8080'
+
+    - name: Enable UFW firewall
+      ufw:
+        state: enabled
+
+    - name: Read initial Jenkins admin password
+      command: cat /var/lib/jenkins/secrets/initialAdminPassword
+      register: jenkins_initial_password
+      changed_when: false
+      failed_when: false
+
+    - name: Show initial Jenkins admin password (only relevant before JCasC takes over the security realm)
+      debug:
+        msg: "Initial Jenkins admin password: {{ jenkins_initial_password.stdout }}"
+      when: jenkins_initial_password.stdout is defined and jenkins_initial_password.stdout | length > 0
+
+    # --- Configuration as Code (JCasC) ---
+
+    - name: Download Jenkins Plugin Manager CLI
+      get_url:
+        url: "https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.13.2/jenkins-plugin-manager-2.13.2.jar"
+        dest: /opt/jenkins-plugin-manager.jar
+        mode: '0644'
+
+    - name: Copy plugins list
+      copy:
+        src: files/plugins.txt
+        dest: /var/lib/jenkins/plugins.txt
+        owner: jenkins
+        group: jenkins
+        mode: '0644'
+
+    - name: Install Jenkins plugins via Plugin Manager CLI
+      become: yes
+      become_user: jenkins
+      command: >
+        java -jar /opt/jenkins-plugin-manager.jar
+        --war /usr/share/jenkins/jenkins.war
+        --plugin-file /var/lib/jenkins/plugins.txt
+        --plugin-download-directory /var/lib/jenkins/plugins
+      register: plugin_install
+      changed_when: true
+
+    - name: Create JCasC config directory
+      file:
+        path: /var/lib/jenkins/casc_configs
+        state: directory
+        owner: jenkins
+        group: jenkins
+        mode: '0750'
+
+    - name: Deploy JCasC configuration (jenkins.yaml)
+      template:
+        src: templates/jenkins-casc.yaml.j2
+        dest: /var/lib/jenkins/casc_configs/jenkins.yaml
+        owner: jenkins
+        group: jenkins
+        mode: '0640'
+      register: casc_config
+
+    - name: Ensure systemd override directory exists
+      file:
+        path: /etc/systemd/system/jenkins.service.d
+        state: directory
+        mode: '0755'
+
+    - name: Point Jenkins at the JCasC config via systemd override
+      copy:
+        dest: /etc/systemd/system/jenkins.service.d/casc.conf
+        content: |
+          [Service]
+          Environment="CASC_JENKINS_CONFIG=/var/lib/jenkins/casc_configs/jenkins.yaml"
+        mode: '0644'
+      register: casc_env
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+      when: casc_env.changed
+
+    - name: Restart Jenkins to install plugins and apply JCasC
+      service:
+        name: jenkins
+        state: restarted
+      when: plugin_install.changed or casc_config.changed or casc_env.changed
+
+    - name: Wait for Jenkins to come back up
+      uri:
+        url: "http://localhost:8080/login"
+        status_code: [200, 403]
+      register: jenkins_up
+      until: jenkins_up.status is defined
+      retries: 30
+      delay: 10

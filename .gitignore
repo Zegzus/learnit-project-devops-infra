@@ -3,4 +3,5 @@
 *.tfstate.*
 ansible/inventory.ini
 *.retry
+*.lock.hcl
 group_vars/all/vault.yml

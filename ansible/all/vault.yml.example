@@ -17,6 +17,11 @@ jenkins_admin_password: "CHANGE_ME_STRONG_PASSWORD"
 dockerhub_user: "your-dockerhub-username"
 dockerhub_pass: "your-dockerhub-access-token"   # use a Docker Hub access token, not your account password
 
+github_username: "LOGIN"
+github_token: "TOKEN:
+
+mysql_root_password: "PASSWORD"
+
 discord_webhook_url: "https://discord.com/api/webhooks/xxxxx/yyyyy"
 
 # Path (on the Ansible control machine) to the private key matching
