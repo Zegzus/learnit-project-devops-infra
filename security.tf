@@ -1,114 +1,255 @@
+# Security Groups (identity only - no inline ingress/egress blocks).
+#
+# IMPORTANT: every rule for every one of these groups is defined below as a
+# separate aws_security_group_rule resource. Mixing inline ingress/egress
+# blocks on aws_security_group with separate aws_security_group_rule
+# resources for the *same* group is explicitly unsupported by the AWS
+# provider - Terraform ends up fighting itself over which rule set is
+# authoritative, causing rules to flap (added/removed) on every apply. That
+# breaks the "idempotent" requirement, so we standardize on one style only.
+
 resource "aws_security_group" "web_sg" {
   name        = "devops-web-sg"
-  description = "Allow SSH and HTTP/HTTPS traffic"
+  description = "App server: SSH + HTTP + app port"
   vpc_id      = aws_vpc.main.id
+  tags        = { Name = "devops-app-security-group" }
+}
 
-  # SSH
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.ssh_allowed_cidr]
-  }
-
-  # HTTP
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # App
-  ingress {
-    from_port   = 8080
-    to_port     = 8080
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "devops-security-group"
-  }
+resource "aws_security_group" "monitoring_sg" {
+  name        = "devops-monitoring-sg"
+  description = "Monitoring server: SSH + Grafana public UI + Loki ingest"
+  vpc_id      = aws_vpc.main.id
+  tags        = { Name = "devops-monitoring-security-group" }
 }
 
 resource "aws_security_group" "jenkins_sg" {
   name        = "devops-jenkins-sg"
-  description = "Allow SSH and Jenkins UI/agent traffic"
+  description = "Jenkins controller: SSH + web UI + inbound agent port"
   vpc_id      = aws_vpc.main.id
-
-  # SSH
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.ssh_allowed_cidr]
-  }
-
-  # Jenkins web UI
-  ingress {
-    from_port   = 8080
-    to_port     = 8080
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # Jenkins inbound agent port (needed if you add build agents/runners later)
-  ingress {
-    from_port   = 50000
-    to_port     = 50000
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "devops-jenkins-security-group"
-  }
+  tags        = { Name = "devops-jenkins-security-group" }
 }
 
-resource "aws_security_group" "agent_sg" {
+resource "aws_security_group" "jenkins_agent_sg" {
   name        = "devops-jenkins-agent-sg"
-  description = "Allow SSH only from the Jenkins controller (and the admin CIDR for debugging)"
+  description = "Jenkins build agent: SSH only, from the controller and admin CIDR"
   vpc_id      = aws_vpc.main.id
+  tags        = { Name = "devops-jenkins-agent-security-group" }
+}
 
-  # The Jenkins controller connects to the agent over SSH to launch it.
-  ingress {
-    from_port       = 22
-    to_port         = 22
-    protocol        = "tcp"
-    security_groups = [aws_security_group.jenkins_sg.id]
-  }
+# ---------------------------------------------------------------------------
+# Egress - every group allows all outbound traffic
+# ---------------------------------------------------------------------------
 
-  # So you can still SSH in yourself to debug the agent.
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.ssh_allowed_cidr]
-  }
+resource "aws_security_group_rule" "web_egress_all" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.web_sg.id
+}
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+resource "aws_security_group_rule" "monitoring_egress_all" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.monitoring_sg.id
+}
 
-  tags = {
-    Name = "devops-jenkins-agent-security-group"
-  }
+resource "aws_security_group_rule" "jenkins_egress_all" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.jenkins_sg.id
+}
+
+resource "aws_security_group_rule" "jenkins_agent_egress_all" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.jenkins_agent_sg.id
+}
+
+# ---------------------------------------------------------------------------
+# web_sg (app_server)
+# ---------------------------------------------------------------------------
+
+resource "aws_security_group_rule" "web_ssh" {
+  type              = "ingress"
+  from_port         = 22
+  to_port           = 22
+  protocol          = "tcp"
+  cidr_blocks       = [var.ssh_allowed_cidr]
+  security_group_id = aws_security_group.web_sg.id
+}
+
+resource "aws_security_group_rule" "web_http" {
+  type              = "ingress"
+  from_port         = 80
+  to_port           = 80
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.web_sg.id
+}
+
+resource "aws_security_group_rule" "web_app_port" {
+  type              = "ingress"
+  from_port         = 8080
+  to_port           = 8080
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.web_sg.id
+}
+
+resource "aws_security_group_rule" "prometheus_to_web" {
+  type                     = "ingress"
+  from_port                = 9100
+  to_port                  = 9100
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.web_sg.id
+  source_security_group_id = aws_security_group.monitoring_sg.id
+}
+
+# ---------------------------------------------------------------------------
+# monitoring_sg
+# ---------------------------------------------------------------------------
+
+resource "aws_security_group_rule" "monitoring_ssh" {
+  type              = "ingress"
+  from_port         = 22
+  to_port           = 22
+  protocol          = "tcp"
+  cidr_blocks       = [var.ssh_allowed_cidr]
+  security_group_id = aws_security_group.monitoring_sg.id
+}
+
+resource "aws_security_group_rule" "monitoring_grafana" {
+  type              = "ingress"
+  from_port         = 3000
+  to_port           = 3000
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.monitoring_sg.id
+}
+
+resource "aws_security_group_rule" "monitoring_alertmanager" {
+  type              = "ingress"
+  from_port         = 9093
+  to_port           = 9093
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.monitoring_sg.id
+}
+
+resource "aws_security_group_rule" "loki_from_app" {
+  type                     = "ingress"
+  from_port                = 3100
+  to_port                  = 3100
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.monitoring_sg.id
+  source_security_group_id = aws_security_group.web_sg.id
+}
+
+resource "aws_security_group_rule" "loki_from_jenkins" {
+  type                     = "ingress"
+  from_port                = 3100
+  to_port                  = 3100
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.monitoring_sg.id
+  source_security_group_id = aws_security_group.jenkins_sg.id
+}
+
+resource "aws_security_group_rule" "loki_from_agent" {
+  type                     = "ingress"
+  from_port                = 3100
+  to_port                  = 3100
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.monitoring_sg.id
+  source_security_group_id = aws_security_group.jenkins_agent_sg.id
+}
+
+resource "aws_security_group_rule" "prometheus_to_monitoring_self" {
+  type                     = "ingress"
+  from_port                = 9100
+  to_port                  = 9100
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.monitoring_sg.id
+  source_security_group_id = aws_security_group.monitoring_sg.id
+}
+
+# ---------------------------------------------------------------------------
+# jenkins_sg (controller)
+# ---------------------------------------------------------------------------
+
+resource "aws_security_group_rule" "jenkins_ssh" {
+  type              = "ingress"
+  from_port         = 22
+  to_port           = 22
+  protocol          = "tcp"
+  cidr_blocks       = [var.ssh_allowed_cidr]
+  security_group_id = aws_security_group.jenkins_sg.id
+}
+
+resource "aws_security_group_rule" "jenkins_web_ui" {
+  type              = "ingress"
+  from_port         = 8080
+  to_port           = 8080
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.jenkins_sg.id
+}
+
+resource "aws_security_group_rule" "prometheus_to_jenkins" {
+  type                     = "ingress"
+  from_port                = 9100
+  to_port                  = 9100
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.jenkins_sg.id
+  source_security_group_id = aws_security_group.monitoring_sg.id
+}
+
+resource "aws_security_group_rule" "agent_to_jenkins_jnlp" {
+  type                     = "ingress"
+  from_port                = 50000
+  to_port                  = 50000
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.jenkins_sg.id
+  source_security_group_id = aws_security_group.jenkins_agent_sg.id
+}
+
+# ---------------------------------------------------------------------------
+# jenkins_agent_sg
+# ---------------------------------------------------------------------------
+
+resource "aws_security_group_rule" "jenkins_ssh_to_agent" {
+  type                     = "ingress"
+  from_port                = 22
+  to_port                  = 22
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.jenkins_agent_sg.id
+  source_security_group_id = aws_security_group.jenkins_sg.id
+}
+
+resource "aws_security_group_rule" "agent_ssh_admin" {
+  type              = "ingress"
+  from_port         = 22
+  to_port           = 22
+  protocol          = "tcp"
+  cidr_blocks       = [var.ssh_allowed_cidr]
+  security_group_id = aws_security_group.jenkins_agent_sg.id
+}
+
+resource "aws_security_group_rule" "prometheus_to_agent" {
+  type                     = "ingress"
+  from_port                = 9100
+  to_port                  = 9100
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.jenkins_agent_sg.id
+  source_security_group_id = aws_security_group.monitoring_sg.id
 }

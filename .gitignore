@@ -3,5 +3,7 @@
 *.tfstate.*
 ansible/inventory.ini
 *.retry
-*.lock.hcl
-group_vars/all/vault.yml
+# NOTE: ansible/group_vars/all.yml is intentionally NOT ignored - it's
+# ansible-vault encrypted, so committing it (encrypted) is expected.
+# Only ever ignore/never-commit the *decrypted* version if you keep one
+# locally under a different filename.

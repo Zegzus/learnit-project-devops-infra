@@ -2,6 +2,8 @@
 - name: Configure server for Dockerized application
   hosts: webservers
   become: yes
+  tags:
+    - webserver
   tasks:
     - name: Update apt cache
       apt:
@@ -58,13 +60,23 @@
         group: ubuntu
         mode: '0755'
 
-    - name: Deploy docker-compose configuration
+    - name: Deploy the docker-compose stack definition
       template:
         src: templates/docker-compose.yml.j2
         dest: /opt/learnit-app/docker-compose.yml
         owner: ubuntu
         group: ubuntu
         mode: '0644'
+
+    - name: Start (or restart) MySQL persistently
+      command: docker compose -f /opt/learnit-app/docker-compose.yml up -d db
+      args:
+        chdir: /opt/learnit-app
+      # This only ever (re)creates the db service. The app service is
+      # intentionally left for Jenkins to manage on each deploy
+      # ('docker compose pull app && docker compose up -d app' after
+      # pushing a new image) - restarting a stateful database container on
+      # every pipeline run would be unnecessary and risky.
 
     - name: Allow SSH (22) and App (8080) in UFW
       ufw:
@@ -74,6 +86,7 @@
       loop:
         - '22'
         - '8080'
+        - '9100'
 
     - name: Enable UFW firewall
       ufw:
@@ -82,6 +95,8 @@
 - name: Configure the dedicated Jenkins build agent
   hosts: jenkins_agents
   become: yes
+  tags:
+    - jenkins_agent
   tasks:
     - name: Update apt cache
       apt:
@@ -91,7 +106,7 @@
     - name: Install Java (build toolchain) and prerequisites
       apt:
         name:
-          - openjdk-21-jdk
+          - openjdk-21-jre
           - maven
           - ca-certificates
           - curl
@@ -140,8 +155,11 @@
     - name: Allow SSH (22) in UFW
       ufw:
         rule: allow
-        port: '22'
+        port: "{{ item }}"
         proto: tcp
+      loop: 
+        - '22'
+        - '9100'
 
     - name: Enable UFW firewall
       ufw:
@@ -150,6 +168,8 @@
 - name: Configure Jenkins server
   hosts: jenkins_servers
   become: yes
+  tags:
+    - jenkins
   tasks:
     - name: Update apt cache
       apt:
@@ -232,6 +252,7 @@
       loop:
         - '22'
         - '8080'
+        - '9100'
 
     - name: Enable UFW firewall
       ufw:
@@ -247,8 +268,6 @@
       debug:
         msg: "Initial Jenkins admin password: {{ jenkins_initial_password.stdout }}"
       when: jenkins_initial_password.stdout is defined and jenkins_initial_password.stdout | length > 0
-
-    # --- Configuration as Code (JCasC) ---
 
     - name: Download Jenkins Plugin Manager CLI
       get_url:
@@ -326,3 +345,218 @@
       until: jenkins_up.status is defined
       retries: 30
       delay: 10
+
+- name: Configure monitoring stack
+  hosts: monitoring
+  become: yes
+  tags : 
+    - monitoring
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required system packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+
+    - name: Add official Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker and Docker Compose plugin
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
+
+    - name: Ensure Docker service is started and enabled at boot
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add current user to the docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: Create the monitoring directory
+      file:
+        path: /opt/monitoring
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Deploy Prometheus configuration
+      template:
+        src: templates/prometheus.yml.j2
+        dest: /opt/monitoring/prometheus.yml
+      register: prometheus_config
+
+    - name: Deploy Prometheus alerting rules
+      template:
+        src: templates/alert-rules.yml.j2
+        dest: /opt/monitoring/alert-rules.yml
+      register: alert_rules
+
+    - name: Deploy Alertmanager configuration
+      template:
+        src: templates/alertmanager.yml.j2
+        dest: /opt/monitoring/alertmanager.yml
+      register: alertmanager_config
+
+    - name: Deploy Loki configuration
+      template:
+        src: templates/loki-config.yaml.j2
+        dest: /opt/monitoring/loki-config.yaml
+
+    - name: Deploy Grafana datasource provisioning
+      template:
+        src: templates/grafana-datasources.yml.j2
+        dest: /opt/monitoring/grafana-datasources.yml
+
+    - name: Deploy docker-compose configuration
+      template:
+        src: templates/docker-compose-monitoring.yml.j2
+        dest: /opt/monitoring/docker-compose.yml
+
+    - name: Pull monitoring images
+      command: docker compose pull
+      args:
+        chdir: /opt/monitoring
+
+    - name: Start monitoring stack
+      command: docker compose up -d
+      args:
+        chdir: /opt/monitoring
+
+    - name: Restart Prometheus container to load new config/targets/rules
+      command: docker compose restart prometheus
+      args:
+        chdir: /opt/monitoring
+      when: prometheus_config.changed or alert_rules.changed
+
+    - name: Restart Alertmanager container to load new config
+      command: docker compose restart alertmanager
+      args:
+        chdir: /opt/monitoring
+      when: alertmanager_config.changed
+
+    - name: Allow SSH (22), Grafana (3000) and Loki (3100) in UFW
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - '22'
+        - '3000'
+        - '3100'
+        - '9093'
+        - '9100'
+
+    - name: Enable UFW firewall
+      ufw:
+        state: enabled
+
+- name: Deploy Node Exporter
+  hosts: all
+  become: yes
+  tags:
+    - node_exporter
+  tasks:
+    - name: Download Node Exporter
+      get_url:
+        url: https://github.com/prometheus/node_exporter/releases/download/v1.8.1/node_exporter-1.8.1.linux-amd64.tar.gz
+        dest: /tmp/node_exporter.tar.gz
+
+    - name: Unpack Node Exporter
+      unarchive:
+        src: /tmp/node_exporter.tar.gz
+        dest: /tmp/
+        remote_src: yes
+
+    - name: Move binary to /usr/local/bin
+      copy:
+        src: /tmp/node_exporter-1.8.1.linux-amd64/node_exporter
+        dest: /usr/local/bin/node_exporter
+        mode: '0755'
+        remote_src: yes
+
+    - name: Create Node Exporter systemd service
+      copy:
+        dest: /etc/systemd/system/node_exporter.service
+        content: |
+          [Unit]
+          Description=Node Exporter
+          After=network.target
+
+          [Service]
+          User=root
+          ExecStart=/usr/local/bin/node_exporter
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Start and enable Node Exporter service
+      systemd:
+        name: node_exporter
+        state: started
+        enabled: yes
+        daemon_reload: yes
+- name: Deploy Promtail (log shipping to Loki)
+  hosts: webservers:jenkins_servers:jenkins_agents
+  become: yes
+  tags:
+    - promtail
+  vars:
+    loki_push_host: "{{ hostvars[groups['monitoring'][0]]['private_ip'] }}"
+  tasks:
+    - name: Create the promtail config directory
+      file:
+        path: /opt/promtail
+        state: directory
+        mode: '0755'
+
+    - name: Deploy Promtail configuration
+      template:
+        src: templates/promtail-config.yaml.j2
+        dest: /opt/promtail/config.yaml
+      register: promtail_config
+
+    - name: Check for an existing promtail container
+      command: docker ps -a --filter "name=^promtail$" --format '{{ "{{" }}.Names{{ "}}" }}'
+      register: promtail_container
+      changed_when: false
+
+    - name: Remove the promtail container so it picks up the new config
+      command: docker rm -f promtail
+      when: promtail_container.stdout == 'promtail' and promtail_config.changed
+
+    - name: Run the Promtail container
+      command: >
+        docker run -d --name promtail --restart unless-stopped
+        -v /var/lib/docker/containers:/var/lib/docker/containers:ro
+        -v /opt/promtail/config.yaml:/etc/promtail/config.yaml
+        -v /opt/promtail/positions:/tmp
+        grafana/promtail:2.9.8 -config.file=/etc/promtail/config.yaml
+      when: promtail_container.stdout != 'promtail' or promtail_config.changed

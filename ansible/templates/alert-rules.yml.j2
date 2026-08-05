@@ -1,0 +1,41 @@
+groups:
+  - name: infra-alerts
+    rules:
+      - alert: InstanceDown
+        expr: up{job="node_exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ '{{ $labels.instance }}' }} is down"
+          description: "Node Exporter on {{ '{{ $labels.instance }}' }} has been unreachable for more than 1 minute."
+
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 < 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low available memory on {{ '{{ $labels.instance }}' }}"
+          description: "Available memory on {{ '{{ $labels.instance }}' }} has been below 10% for more than 5 minutes."
+
+      - alert: HighDiskUsage
+        expr: (node_filesystem_avail_bytes{mountpoint="/",fstype!="rootfs"} / node_filesystem_size_bytes{mountpoint="/",fstype!="rootfs"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space on {{ '{{ $labels.instance }}' }}"
+          description: "Root filesystem on {{ '{{ $labels.instance }}' }} has less than 15% free space."
+
+      - alert: HighLoadAverage
+        # Simple static threshold rather than computing per-instance CPU
+        # core count - good enough for the small (1-2 vCPU) instances this
+        # project runs on. Raise this if you use bigger instance types.
+        expr: node_load1 > 4
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High load average on {{ '{{ $labels.instance }}' }}"
+          description: "1-minute load average on {{ '{{ $labels.instance }}' }} has been above 4 for more than 5 minutes."
