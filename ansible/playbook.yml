@@ -69,14 +69,17 @@
         mode: '0644'
 
     - name: Start (or restart) MySQL persistently
-      command: docker compose -f /opt/learnit-app/docker-compose.yml up -d db
+      command: docker compose -f /opt/learnit-app/docker-compose.yml up -d db caddy
       args:
         chdir: /opt/learnit-app
-      # This only ever (re)creates the db service. The app service is
-      # intentionally left for Jenkins to manage on each deploy
-      # ('docker compose pull app && docker compose up -d app' after
-      # pushing a new image) - restarting a stateful database container on
-      # every pipeline run would be unnecessary and risky.
+
+    - name: Update DuckDNS record with the new server IP
+      uri:
+        url: "https://www.duckdns.org/update?domains={{ duckdns_domain }}&token={{ duckdns_token }}"
+        method: GET
+        return_content: yes
+      register: duckdns_result
+      failed_when: "'OK' not in duckdns_result.content"
 
     - name: Allow SSH (22) and App (8080) in UFW
       ufw:
@@ -85,6 +88,8 @@
         proto: tcp
       loop:
         - '22'
+        - '80'
+        - '443'
         - '8080'
         - '9100'
 
@@ -523,6 +528,7 @@
         state: started
         enabled: yes
         daemon_reload: yes
+          
 - name: Deploy Promtail (log shipping to Loki)
   hosts: webservers:jenkins_servers:jenkins_agents
   become: yes

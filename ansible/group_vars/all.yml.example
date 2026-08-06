@@ -43,3 +43,6 @@ app_repo_name: "learnit-project-devops-app"
 # Docker Hub repo the app image is pushed to / pulled from (must match
 # DOCKERHUB_REPO in the Jenkinsfile).
 dockerhub_repo: "zegzus/learnit-app"
+
+duckdns_domain: "your-subdomain"
+duckdns_token: "your-duckdns-token"

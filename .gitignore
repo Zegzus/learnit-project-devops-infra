@@ -2,6 +2,7 @@
 *.tfstate
 *.tfstate.*
 ansible/inventory.ini
+.vault_pass
 *.retry
 # NOTE: ansible/group_vars/all.yml is intentionally NOT ignored - it's
 # ansible-vault encrypted, so committing it (encrypted) is expected.

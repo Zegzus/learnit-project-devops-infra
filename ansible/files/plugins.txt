@@ -12,3 +12,4 @@ matrix-auth
 ansicolor
 docker-workflow
 cloudbees-folder
+junit

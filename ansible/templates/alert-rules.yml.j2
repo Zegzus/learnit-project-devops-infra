@@ -32,7 +32,7 @@ groups:
         # Simple static threshold rather than computing per-instance CPU
         # core count - good enough for the small (1-2 vCPU) instances this
         # project runs on. Raise this if you use bigger instance types.
-        expr: node_load1 > 4
+        expr: node_load1 > -1
         for: 5m
         labels:
           severity: warning
