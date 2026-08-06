@@ -81,7 +81,7 @@
       register: duckdns_result
       failed_when: "'OK' not in duckdns_result.content"
 
-    - name: Allow SSH (22) and App (8080) in UFW
+    - name: Allow ports in UFW
       ufw:
         rule: allow
         port: "{{ item }}"
@@ -157,7 +157,7 @@
         group: ubuntu
         mode: '0755'
 
-    - name: Allow SSH (22) in UFW
+    - name: Allow ports in UFW
       ufw:
         rule: allow
         port: "{{ item }}"

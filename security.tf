@@ -1,13 +1,3 @@
-# Security Groups (identity only - no inline ingress/egress blocks).
-#
-# IMPORTANT: every rule for every one of these groups is defined below as a
-# separate aws_security_group_rule resource. Mixing inline ingress/egress
-# blocks on aws_security_group with separate aws_security_group_rule
-# resources for the *same* group is explicitly unsupported by the AWS
-# provider - Terraform ends up fighting itself over which rule set is
-# authoritative, causing rules to flap (added/removed) on every apply. That
-# breaks the "idempotent" requirement, so we standardize on one style only.
-
 resource "aws_security_group" "web_sg" {
   name        = "devops-web-sg"
   description = "App server: SSH + HTTP + app port"
@@ -36,9 +26,7 @@ resource "aws_security_group" "jenkins_agent_sg" {
   tags        = { Name = "devops-jenkins-agent-security-group" }
 }
 
-# ---------------------------------------------------------------------------
-# Egress - every group allows all outbound traffic
-# ---------------------------------------------------------------------------
+# Egress
 
 resource "aws_security_group_rule" "web_egress_all" {
   type              = "egress"

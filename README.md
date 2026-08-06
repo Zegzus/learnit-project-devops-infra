@@ -4,31 +4,6 @@
 
 Projekt stawia w AWS (region `eu-central-1`) cztery maszyny EC2 w jednej sieci VPC i konfiguruje je automatycznie przez Ansible:
 
-```mermaid
-flowchart TB
-    subgraph VPC["VPC 10.0.0.0/16 (public subnet 10.0.1.0/24)"]
-        APP["app_server<br/>Docker: MySQL 8.0 + app (Spring Boot) + Caddy<br/>:80 :443 :8080"]
-        JENK["jenkins_server<br/>Jenkins + JCasC<br/>:8080"]
-        AGENT["jenkins_agent<br/>Java 21 + Maven + Docker<br/>SSH build node"]
-        MON["monitoring_server<br/>Prometheus + Alertmanager + Loki + Grafana<br/>:3000 :9093 :3100"]
-    end
-
-    INTERNET((Internet)) -->|HTTP/HTTPS 80/443, 8080| APP
-    INTERNET -->|8080| JENK
-    INTERNET -->|3000, 9093| MON
-    JENK -->|SSH :50000/22, JNLP| AGENT
-    AGENT -->|build & push image| DH[(Docker Hub)]
-    APP -->|pull image| DH
-    MON -->|scrape :9100 Node Exporter| APP
-    MON -->|scrape :9100| JENK
-    MON -->|scrape :9100| AGENT
-    APP -->|Promtail -> push :3100| MON
-    JENK -->|Promtail -> push :3100| MON
-    AGENT -->|Promtail -> push :3100| MON
-    JENK -->|Discord webhook: build status| DISCORD[(Discord)]
-    MON -->|Alertmanager -> Discord webhook| DISCORD
-```
-
 | Serwer | Rola | Kluczowe porty |
 |---|---|---|
 | `app_server` | Aplikacja (Docker) + MySQL 8.0 + reverse proxy Caddy | 22, 80, 443, 8080, 9100 |
